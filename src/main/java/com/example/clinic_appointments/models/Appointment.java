@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
 
@@ -26,6 +27,10 @@ public class Appointment {
     @JoinColumn(name = "doctor_id")
     @NotNull(message = "Doctor is required")
     private Doctor doctor;
+
+    @ManyToOne
+    @JoinColumn(name = "room_id")
+    private Room room;
 
     @NotNull(message = "Start time is required")
     @FutureOrPresent(message = "Start time must be in the present or future")
@@ -83,6 +88,15 @@ public class Appointment {
     public void setDoctor(Doctor doctor) {
         this.doctor = doctor;
     }
+
+    public Room getRoom() {
+        return room;
+    }
+
+    public void setRoom(Room room) {
+        this.room = room;
+    }
+
 
     public LocalDateTime getStartTime() {
         return startTime;
