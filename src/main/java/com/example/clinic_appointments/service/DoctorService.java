@@ -1,5 +1,6 @@
 package com.example.clinic_appointments.service;
 
+import com.example.clinic_appointments.exception.ResourceNotFoundException;
 import com.example.clinic_appointments.model.Doctor;
 import com.example.clinic_appointments.repository.DoctorRepository;
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ public class DoctorService {
 
     public Doctor getDoctorById(Long id) {
         return doctorRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Doctor not found with id " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found with id " + id));
     }
 
     public Doctor createDoctor(Doctor doctor) {
@@ -29,7 +30,7 @@ public class DoctorService {
     }
 
     public Doctor updateDoctor(Long id, Doctor updated) {
-        Doctor existing = getDoctorById(id);
+        Doctor existing = getDoctorById(id); // dacă nu există → 404 automat
 
         existing.setFirstName(updated.getFirstName());
         existing.setLastName(updated.getLastName());
@@ -41,9 +42,7 @@ public class DoctorService {
     }
 
     public void deleteDoctor(Long id) {
-        if (!doctorRepository.existsById(id)) {
-            throw new RuntimeException("Doctor not found with id " + id);
-        }
-        doctorRepository.deleteById(id);
+        Doctor existing = getDoctorById(id); // dacă nu există → 404
+        doctorRepository.delete(existing);
     }
 }
