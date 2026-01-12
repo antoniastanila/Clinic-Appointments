@@ -156,4 +156,14 @@ public Appointment updateAppointment(Long id, Appointment updated) {
         }
         appointmentRepository.deleteById(id);
     }
+
+    public List<Appointment> getFilteredAppointments(Long patientId,
+                                                Long doctorId,
+                                                Long roomId,
+                                                AppointmentStatus status,
+                                                LocalDateTime from,
+                                                LocalDateTime to) {
+    return appointmentRepository.findFiltered(patientId, doctorId, roomId, status, from, to);
+}
+
 }
