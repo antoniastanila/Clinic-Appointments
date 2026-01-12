@@ -1,12 +1,17 @@
 package com.example.clinic_appointments.service;
+import com.example.clinic_appointments.exception.BadRequestException;
+import com.example.clinic_appointments.exception.ConflictException;
 
 import com.example.clinic_appointments.model.Appointment;
 import com.example.clinic_appointments.model.AppointmentStatus;
 import com.example.clinic_appointments.model.Doctor;
 import com.example.clinic_appointments.model.Patient;
+import com.example.clinic_appointments.model.Room;
 import com.example.clinic_appointments.repository.AppointmentRepository;
 import com.example.clinic_appointments.repository.DoctorRepository;
 import com.example.clinic_appointments.repository.PatientRepository;
+import com.example.clinic_appointments.repository.RoomRepository;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -32,6 +37,9 @@ class AppointmentServiceTest {
 
     @Mock
     private DoctorRepository doctorRepository;
+
+    @Mock
+    private RoomRepository roomRepository;
 
     @InjectMocks
     private AppointmentService appointmentService;
@@ -81,109 +89,149 @@ class AppointmentServiceTest {
 
     @Test
     void createAppointment_valid_setsPatientDoctorAndStatusAndSaves() {
-        // appointment primit "din afara", cu doar id-uri la patient/doctor
-        Patient patient = new Patient();
-        patient.setId(10L);
+    Patient patient = new Patient();
+    patient.setId(10L);
 
-        Doctor doctor = new Doctor();
-        doctor.setId(20L);
+    Doctor doctor = new Doctor();
+    doctor.setId(20L);
 
-        Appointment toCreate = new Appointment();
-        toCreate.setPatient(patient);
-        toCreate.setDoctor(doctor);
-        toCreate.setStartTime(LocalDateTime.of(2025, 1, 1, 10, 0));
-        toCreate.setEndTime(LocalDateTime.of(2025, 1, 1, 11, 0));
-        toCreate.setReason("Control");
+    Room room = new Room();
+    room.setId(30L);
 
-        // ce exista in "baza" (mock)
-        Patient persistedPatient = new Patient();
-        persistedPatient.setId(10L);
-        persistedPatient.setFirstName("Ana");
+    Appointment toCreate = new Appointment();
+    toCreate.setPatient(patient);
+    toCreate.setDoctor(doctor);
+    toCreate.setRoom(room);
+    toCreate.setStartTime(LocalDateTime.of(2025, 1, 1, 10, 0));
+    toCreate.setEndTime(LocalDateTime.of(2025, 1, 1, 11, 0));
+    toCreate.setReason("Control");
 
-        Doctor persistedDoctor = new Doctor();
-        persistedDoctor.setId(20L);
-        persistedDoctor.setFirstName("Dr. Ion");
+    Patient persistedPatient = new Patient();
+    persistedPatient.setId(10L);
+    persistedPatient.setFirstName("Ana");
 
-        when(patientRepository.findById(10L)).thenReturn(Optional.of(persistedPatient));
-        when(doctorRepository.findById(20L)).thenReturn(Optional.of(persistedDoctor));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(invocation -> {
-            Appointment saved = invocation.getArgument(0);
-            saved.setId(1L);
-            return saved;
-        });
+    Doctor persistedDoctor = new Doctor();
+    persistedDoctor.setId(20L);
+    persistedDoctor.setFirstName("Dr. Ion");
 
-        Appointment created = appointmentService.createAppointment(toCreate);
+    Room persistedRoom = new Room();
+    persistedRoom.setId(30L);
 
-        assertThat(created.getId()).isEqualTo(1L);
-        assertThat(created.getPatient()).isSameAs(persistedPatient);
-        assertThat(created.getDoctor()).isSameAs(persistedDoctor);
-        assertThat(created.getStatus()).isEqualTo(AppointmentStatus.SCHEDULED);
+    when(patientRepository.findById(10L)).thenReturn(Optional.of(persistedPatient));
+    when(doctorRepository.findById(20L)).thenReturn(Optional.of(persistedDoctor));
+    when(roomRepository.findById(30L)).thenReturn(Optional.of(persistedRoom));
 
-        verify(patientRepository).findById(10L);
-        verify(doctorRepository).findById(20L);
-        verify(appointmentRepository).save(any(Appointment.class));
-    }
+    // overlap checks -> allow
+    when(appointmentRepository.existsByDoctor_IdAndStatusNotAndStartTimeLessThanAndEndTimeGreaterThan(
+            eq(20L), eq(AppointmentStatus.CANCELLED), any(LocalDateTime.class), any(LocalDateTime.class)))
+            .thenReturn(false);
+
+    when(appointmentRepository.existsByRoom_IdAndStatusNotAndStartTimeLessThanAndEndTimeGreaterThan(
+            eq(30L), eq(AppointmentStatus.CANCELLED), any(LocalDateTime.class), any(LocalDateTime.class)))
+            .thenReturn(false);
+
+    when(appointmentRepository.save(any(Appointment.class))).thenAnswer(invocation -> {
+        Appointment saved = invocation.getArgument(0);
+        saved.setId(1L);
+        return saved;
+    });
+
+    Appointment created = appointmentService.createAppointment(toCreate);
+
+    assertThat(created.getId()).isEqualTo(1L);
+    assertThat(created.getPatient()).isSameAs(persistedPatient);
+    assertThat(created.getDoctor()).isSameAs(persistedDoctor);
+    assertThat(created.getRoom()).isSameAs(persistedRoom);
+    assertThat(created.getStatus()).isEqualTo(AppointmentStatus.SCHEDULED);
+
+    verify(patientRepository).findById(10L);
+    verify(doctorRepository).findById(20L);
+    verify(roomRepository).findById(30L);
+    verify(appointmentRepository).save(any(Appointment.class));
+}
+
 
     @Test
     void createAppointment_missingPatientOrDoctor_throwsException() {
-        Appointment appt = new Appointment();
-        // fara patient / fara doctor
-        appt.setStartTime(LocalDateTime.now());
-        appt.setEndTime(LocalDateTime.now().plusHours(1));
+    Appointment appt = new Appointment();
+    appt.setStartTime(LocalDateTime.now());
+    appt.setEndTime(LocalDateTime.now().plusHours(1));
 
-        assertThatThrownBy(() -> appointmentService.createAppointment(appt))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("Patient and doctor must be provided");
-    }
+    assertThatThrownBy(() -> appointmentService.createAppointment(appt))
+            .isInstanceOf(BadRequestException.class)
+            .hasMessageContaining("Patient, doctor and room must be provided with valid IDs");
+}
+
 
     @Test
     void createAppointment_invalidEndBeforeStart_throwsException() {
-        Patient patient = new Patient();
-        patient.setId(10L);
+    Patient patient = new Patient();
+    patient.setId(10L);
 
-        Doctor doctor = new Doctor();
-        doctor.setId(20L);
+    Doctor doctor = new Doctor();
+    doctor.setId(20L);
 
-        Appointment appt = new Appointment();
-        appt.setPatient(patient);
-        appt.setDoctor(doctor);
-        appt.setStartTime(LocalDateTime.of(2025, 1, 1, 12, 0));
-        appt.setEndTime(LocalDateTime.of(2025, 1, 1, 11, 0)); // end < start
+    Room room = new Room();
+    room.setId(30L);
 
-        when(patientRepository.findById(10L)).thenReturn(Optional.of(patient));
-        when(doctorRepository.findById(20L)).thenReturn(Optional.of(doctor));
+    Appointment appt = new Appointment();
+    appt.setPatient(patient);
+    appt.setDoctor(doctor);
+    appt.setRoom(room);
+    appt.setStartTime(LocalDateTime.of(2025, 1, 1, 12, 0));
+    appt.setEndTime(LocalDateTime.of(2025, 1, 1, 11, 0)); // end < start
 
-        assertThatThrownBy(() -> appointmentService.createAppointment(appt))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("End time cannot be before start time");
-    }
+    assertThatThrownBy(() -> appointmentService.createAppointment(appt))
+            .isInstanceOf(BadRequestException.class)
+            .hasMessageContaining("End time must be after start time");
+}
 
     @Test
     void updateAppointment_updatesFieldsAndSaves() {
-        Appointment existing = new Appointment();
-        existing.setId(1L);
-        existing.setReason("Old reason");
-        existing.setStartTime(LocalDateTime.of(2025, 1, 1, 10, 0));
-        existing.setEndTime(LocalDateTime.of(2025, 1, 1, 11, 0));
-        existing.setStatus(AppointmentStatus.SCHEDULED);
+    Doctor doctor = new Doctor();
+    doctor.setId(20L);
 
-        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(existing));
+    Room room = new Room();
+    room.setId(30L);
 
-        Appointment updated = new Appointment();
-        updated.setReason("New reason");
-        updated.setStartTime(LocalDateTime.of(2025, 1, 2, 14, 0));
-        updated.setEndTime(LocalDateTime.of(2025, 1, 2, 15, 0));
-        updated.setStatus(AppointmentStatus.COMPLETED);
+    Appointment existing = new Appointment();
+    existing.setId(1L);
+    existing.setReason("Old reason");
+    existing.setStartTime(LocalDateTime.of(2025, 1, 1, 10, 0));
+    existing.setEndTime(LocalDateTime.of(2025, 1, 1, 11, 0));
+    existing.setStatus(AppointmentStatus.SCHEDULED);
+    existing.setDoctor(doctor);
+    existing.setRoom(room);
 
-        when(appointmentRepository.save(existing)).thenReturn(existing);
+    when(appointmentRepository.findById(1L)).thenReturn(Optional.of(existing));
 
-        Appointment result = appointmentService.updateAppointment(1L, updated);
+    // overlap checks -> allow
+    when(appointmentRepository.existsByDoctor_IdAndStatusNotAndIdNotAndStartTimeLessThanAndEndTimeGreaterThan(
+            eq(20L), eq(AppointmentStatus.CANCELLED), eq(1L), any(LocalDateTime.class), any(LocalDateTime.class)))
+            .thenReturn(false);
 
-        assertThat(result.getReason()).isEqualTo("New reason");
-        assertThat(result.getStartTime()).isEqualTo(LocalDateTime.of(2025, 1, 2, 14, 0));
-        assertThat(result.getStatus()).isEqualTo(AppointmentStatus.COMPLETED);
-        verify(appointmentRepository).save(existing);
-    }
+    when(appointmentRepository.existsByRoom_IdAndStatusNotAndIdNotAndStartTimeLessThanAndEndTimeGreaterThan(
+            eq(30L), eq(AppointmentStatus.CANCELLED), eq(1L), any(LocalDateTime.class), any(LocalDateTime.class)))
+            .thenReturn(false);
+
+    Appointment updated = new Appointment();
+    updated.setReason("New reason");
+    updated.setStartTime(LocalDateTime.of(2025, 1, 2, 14, 0));
+    updated.setEndTime(LocalDateTime.of(2025, 1, 2, 15, 0));
+    updated.setStatus(AppointmentStatus.COMPLETED);
+
+    when(appointmentRepository.save(existing)).thenReturn(existing);
+
+    Appointment result = appointmentService.updateAppointment(1L, updated);
+
+    assertThat(result.getReason()).isEqualTo("New reason");
+    assertThat(result.getStartTime()).isEqualTo(LocalDateTime.of(2025, 1, 2, 14, 0));
+    assertThat(result.getEndTime()).isEqualTo(LocalDateTime.of(2025, 1, 2, 15, 0));
+    assertThat(result.getStatus()).isEqualTo(AppointmentStatus.COMPLETED);
+
+    verify(appointmentRepository).save(existing);
+}
+
 
     @Test
     void deleteAppointment_existing_callsDeleteById() {

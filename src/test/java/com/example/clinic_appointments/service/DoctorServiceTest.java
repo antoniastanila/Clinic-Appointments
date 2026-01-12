@@ -2,6 +2,8 @@ package com.example.clinic_appointments.service;
 
 import com.example.clinic_appointments.model.Doctor;
 import com.example.clinic_appointments.repository.DoctorRepository;
+import com.example.clinic_appointments.exception.ResourceNotFoundException;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -118,19 +120,36 @@ class DoctorServiceTest {
 
     @Test
     void deleteDoctor_existing_callsDeleteById() {
-        when(doctorRepository.existsById(1L)).thenReturn(true);
+     // given
+    Long id = 1L;
+    Doctor existing = new Doctor();
+    existing.setId(id);
+    existing.setFirstName("John");
+    existing.setLastName("Doe");
 
-        doctorService.deleteDoctor(1L);
+    when(doctorRepository.findById(id)).thenReturn(java.util.Optional.of(existing));
 
-        verify(doctorRepository).deleteById(1L);
-    }
+    // when
+    doctorService.deleteDoctor(id);
 
-    @Test
-    void deleteDoctor_missing_throwsException() {
-        when(doctorRepository.existsById(99L)).thenReturn(false);
+    // then – verificăm că s-a chemat delete(Doctor), nu deleteById
+    verify(doctorRepository).delete(existing);
+    // sau mai generic:
+    // verify(doctorRepository).delete(any(Doctor.class));
+}
+   @Test
+void deleteDoctor_missing_throwsException() {
+    // given
+    Long id = 99L;
+    when(doctorRepository.findById(id)).thenReturn(java.util.Optional.empty());
 
-        assertThatThrownBy(() -> doctorService.deleteDoctor(99L))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("Doctor not found");
-    }
+    // when + then
+    assertThatThrownBy(() -> doctorService.deleteDoctor(id))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("Doctor not found with id " + id);
+
+    // și aici:
+    verify(doctorRepository, never()).delete(any(Doctor.class));
+}
+
 }
